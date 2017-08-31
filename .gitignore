@@ -1,0 +1,7 @@
+ckpt/*
+data/*
+*.pyc
+local_scores/*
+scores/*
+raw_data/*
+summary/*
