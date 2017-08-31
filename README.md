@@ -21,7 +21,7 @@
 |　　|- data　　　　　　　　　　　# 预处理得到的数据<br/>
 |　　|- data_process　　　　　　　# 数据预处理代码<br/>
 |　　|- models　　　　　　　　　　# 模型代码<br/>
-|　　|　　|- wd-1-1-cnn-concat　　　　<br/>　　　　　　
+|　　|　　|- wd-1-1-cnn-concat<br/>
 |　　|　　|　　|- network.py　　　　　　# 定义网络结构<br/>
 |　　|　　|　　|- train.py　　　　　　  # 模型训练<br/>
 |　　|　　|　　|- predict.py　　　　　　# 验证集/测试集预测，生成概率矩阵<br/>
@@ -40,7 +40,7 @@
 
 ## 3.数据预处理
 - 把比赛提供的所有数据解压到 raw_data/ 目录下。
-- 按照顺序依次执行各个 .py，不带任何参数。<br/>
+- 按照顺序依次执行下面每个 .py，不带任何参数。<br/>
   或者在当前目录下输入下面命令运行所有文件：<br/>
   dos2unix run_all_data_process.sh   # 使用cygwin工具dos2unix将script改为unix格式<br/>
   sh run_all_data_process.sh
@@ -63,7 +63,7 @@ data/ch_eval_content.npy<br/>
 同 char2id.py
 
 ### 3.5 creat_batch_data.py
-把所有的数据按照 batch_size(128) 进行打包，固定seed，随机取 10 万样本作为验证集。每个batch存储为一个 npz 文件，包括 X, y 两部分。
+把所有的数据按照 batch_size(128) 进行打包(显存大的可以取256)，固定seed，随机取 10 万样本作为验证集。每个batch存储为一个 npz 文件，包括 X, y 两部分。
 这里所有的序列都进行了截断，长度不足的用0进行padding到固定长度。<br/>
 保存位置：<br/>
 wd_train_path = '../data/wd-data/data_train/'<br/>
