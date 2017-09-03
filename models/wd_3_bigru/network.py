@@ -69,14 +69,14 @@ class BiGRU(object):
             tf.summary.histogram('beta_fc', beta_fc)
             fc_bn, update_ema_fc = self.batchnorm(h_fc, beta_fc, convolutional=False)
             self.update_emas.append(update_ema_fc)
-            fc_bn_relu = tf.nn.relu(fc_bn, name="relu")
+            self.fc_bn_relu = tf.nn.relu(fc_bn, name="relu")
 
         with tf.variable_scope('out_layer'):
             W_out = self.weight_variable([self.fc_hidden_size, self.n_class], name='Weight_out')
             tf.summary.histogram('Weight_out', W_out)
             b_out = self.bias_variable([self.n_class], name='bias_out')
             tf.summary.histogram('bias_out', b_out)
-            self._y_pred = tf.nn.xw_plus_b(fc_bn_relu, W_out, b_out, name='y_pred')  # 每个类别的分数 scores
+            self._y_pred = tf.nn.xw_plus_b(self.fc_bn_relu, W_out, b_out, name='y_pred')  # 每个类别的分数 scores
 
         with tf.name_scope('loss'):
             self._loss = tf.reduce_mean(

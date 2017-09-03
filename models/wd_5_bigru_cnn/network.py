@@ -77,8 +77,8 @@ class BiGRU_CNN(object):
             tf.summary.histogram('beta_fc', beta_fc)
             fc_bn, update_ema_fc = self.batchnorm(h_fc, beta_fc, convolutional=False)
             self.update_emas.append(update_ema_fc)
-            fc_bn_relu = tf.nn.relu(fc_bn, name="relu")
-            fc_bn_drop = tf.nn.dropout(fc_bn_relu, self.keep_prob)
+            self.fc_bn_relu = tf.nn.relu(fc_bn, name="relu")
+            fc_bn_drop = tf.nn.dropout(self.fc_bn_relu, self.keep_prob)
 
         with tf.variable_scope('out_layer'):
             W_out = self.weight_variable([self.fc_hidden_size, self.n_class], name='Weight_out')
