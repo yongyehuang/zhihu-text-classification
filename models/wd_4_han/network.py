@@ -4,43 +4,37 @@ import tensorflow as tf
 from tensorflow.contrib import rnn
 import tensorflow.contrib.layers as layers
 
-"""wd-5-bigru-cnn
-两部分使用不同的 embedding， 因为RNN与CNN结构完全不同，共用embedding会降低性能。
-title 部分使用 bigru+attention；content 部分使用 textcnn； 两部分输出直接 concat。
+"""wd_4_han
+title 部分使用 bigru+attention；content 部分使用 han； 两部分输出直接 concat。
 """
 
 
 class Settings(object):
     def __init__(self):
-        self.model_name = 'wd-5-bigru-cnn'
-        self.title_len = 30
-        self.content_len = 150
+        self.model_name = 'wd_4_han'
+        self.title_len = self.sent_len = 30
+        self.doc_len = 10
         self.hidden_size = 256
         self.n_layer = 1
-        self.filter_sizes = [2, 3, 4, 5, 7]
-        self.n_filter = 256
         self.fc_hidden_size = 1024
         self.n_class = 1999
         self.summary_path = '../../summary/' + self.model_name + '/'
         self.ckpt_path = '../../ckpt/' + self.model_name + '/'
 
 
-class BiGRU_CNN(object):
+class HAN(object):
     """
     title: inputs->bigru+attention->output_title
-    content: inputs->textcnn->output_content
+    content: inputs->sent_encoder(bigru+attention)->doc_encoder(bigru+attention)->output_content
     concat[output_title, output_content] -> fc+bn+relu -> sigmoid_entropy.
     """
 
     def __init__(self, W_embedding, settings):
         self.model_name = settings.model_name
-        self.title_len = settings.title_len
-        self.content_len = settings.content_len
+        self.title_len = self.sent_len = settings.sent_len
+        self.doc_len = settings.doc_len
         self.hidden_size = settings.hidden_size
         self.n_layer = settings.n_layer
-        self.filter_sizes = settings.filter_sizes
-        self.n_filter = settings.n_filter
-        self.n_filter_total = self.n_filter * len(self.filter_sizes)
         self.n_class = settings.n_class
         self.fc_hidden_size = settings.fc_hidden_size
         self._global_step = tf.Variable(0, trainable=False, name='Global_Step')
@@ -52,25 +46,23 @@ class BiGRU_CNN(object):
 
         with tf.name_scope('Inputs'):
             self._X1_inputs = tf.placeholder(tf.int64, [None, self.title_len], name='X1_inputs')
-            self._X2_inputs = tf.placeholder(tf.int64, [None, self.content_len], name='X2_inputs')
+            self._X2_inputs = tf.placeholder(tf.int64, [None, self.doc_len * self.sent_len], name='X2_inputs')
             self._y_inputs = tf.placeholder(tf.float32, [None, self.n_class], name='y_input')
 
         with tf.variable_scope('embedding'):
-            self.title_embedding = tf.get_variable(name='title_embedding', shape=W_embedding.shape,
-                                             initializer=tf.constant_initializer(W_embedding), trainable=True)
-            self.content_embedding = tf.get_variable(name='content_embedding', shape=W_embedding.shape,
+            self.embedding = tf.get_variable(name='embedding', shape=W_embedding.shape,
                                              initializer=tf.constant_initializer(W_embedding), trainable=True)
         self.embedding_size = W_embedding.shape[1]
 
         with tf.variable_scope('bigru_text'):
             output_title = self.bigru_inference(self._X1_inputs)
 
-        with tf.variable_scope('cnn_content'):
-            output_content = self.cnn_inference(self._X2_inputs, self.content_len)
+        with tf.variable_scope('han_content'):
+            output_content = self.han_inference(self._X2_inputs)
 
         with tf.variable_scope('fc-bn-layer'):
             output = tf.concat([output_title, output_content], axis=1)
-            W_fc = self.weight_variable([self.hidden_size*2 + self.n_filter_total, self.fc_hidden_size], name='Weight_fc')
+            W_fc = self.weight_variable([self.hidden_size * 4, self.fc_hidden_size], name='Weight_fc')
             tf.summary.histogram('W_fc', W_fc)
             h_fc = tf.matmul(output, W_fc, name='h_fc')
             beta_fc = tf.Variable(tf.constant(0.1, tf.float32, shape=[self.fc_hidden_size], name="beta_fc"))
@@ -170,15 +162,18 @@ class BiGRU_CNN(object):
             cell = rnn.GRUCell(self.hidden_size, reuse=tf.get_variable_scope().reuse)
         return rnn.DropoutWrapper(cell, output_keep_prob=self.keep_prob)
 
-    def bi_gru(self, inputs):
-        """build the bi-GRU network. 返回个所有层的隐含状态。"""
+    def bi_gru(self, inputs, seg_num):
+        """build the bi-GRU network. Return the encoder represented vector.
+        n_step: 句子的词数量；或者文档的句子数。
+        seg_num: 序列的数量，原本应该为 batch_size, 但是这里将 batch_size 个 doc展开成很多个句子。
+        """
         cells_fw = [self.gru_cell() for _ in range(self.n_layer)]
         cells_bw = [self.gru_cell() for _ in range(self.n_layer)]
-        initial_states_fw = [cell_fw.zero_state(self.batch_size, tf.float32) for cell_fw in cells_fw]
-        initial_states_bw = [cell_bw.zero_state(self.batch_size, tf.float32) for cell_bw in cells_bw]
+        initial_states_fw = [cell_fw.zero_state(seg_num, tf.float32) for cell_fw in cells_fw]
+        initial_states_bw = [cell_bw.zero_state(seg_num, tf.float32) for cell_bw in cells_bw]
         outputs, _, _ = rnn.stack_bidirectional_dynamic_rnn(cells_fw, cells_bw, inputs,
-                                                            initial_states_fw=initial_states_fw,
-                                                            initial_states_bw=initial_states_bw, dtype=tf.float32)
+                        initial_states_fw = initial_states_fw, initial_states_bw = initial_states_bw, dtype=tf.float32)
+        # outputs: Output Tensor shaped: seg_num, max_time, layers_output]，其中layers_output=hidden_size * 2 在这里。
         return outputs
 
     def task_specific_attention(self, inputs, output_size,
@@ -212,40 +207,31 @@ class BiGRU_CNN(object):
             return outputs  # 输出 [batch_size, hidden_size*2]
 
     def bigru_inference(self, X_inputs):
-        inputs = tf.nn.embedding_lookup(self.title_embedding, X_inputs)
-        output_bigru = self.bi_gru(inputs)
+        inputs = tf.nn.embedding_lookup(self.embedding, X_inputs)
+        output_bigru = self.bi_gru(inputs, self.batch_size)
         output_att = self.task_specific_attention(output_bigru, self.hidden_size*2)
-        return output_att
+        return output_att   # 输出 [batch_size, hidden_size*2]
 
-    def cnn_inference(self, X_inputs, n_step):
-        """TextCNN 模型。
+    def han_inference(self, X_inputs):
+        """分层 attention 模型。content部分。
         Args:
-            X_inputs: tensor.shape=(batch_size, n_step)
+            X_inputs: tensor.shape=(batch_size, doc_len*sent_len)
         Returns:
-            title_outputs: tensor.shape=(batch_size, self.n_filter_total)
+            doc_attn_outputs: tensor.shape=(batch_size, hidden_size(*2 for bigru))
         """
-        inputs = tf.nn.embedding_lookup(self.content_embedding, X_inputs)
-        inputs = tf.expand_dims(inputs, -1)
-        pooled_outputs = list()
-        for i, filter_size in enumerate(self.filter_sizes):
-            with tf.variable_scope("conv-maxpool-%s" % filter_size):
-                # Convolution Layer
-                filter_shape = [filter_size, self.embedding_size, 1, self.n_filter]
-                W_filter = self.weight_variable(shape=filter_shape, name='W_filter')
-                beta = self.bias_variable(shape=[self.n_filter], name='beta_filter')
-                tf.summary.histogram('beta', beta)
-                conv = tf.nn.conv2d(inputs, W_filter, strides=[1, 1, 1, 1], padding="VALID", name="conv")
-                conv_bn, update_ema = self.batchnorm(conv, beta, convolutional=True)
-                # Apply nonlinearity, batch norm scaling is not useful with relus
-                h = tf.nn.relu(conv_bn, name="relu")
-                # Maxpooling over the outputs
-                pooled = tf.nn.max_pool(h, ksize=[1, n_step - filter_size + 1, 1, 1],
-                                        strides=[1, 1, 1, 1], padding='VALID', name="pool")
-                pooled_outputs.append(pooled)
-                self.update_emas.append(update_ema)
-        h_pool = tf.concat(pooled_outputs, 3)
-        h_pool_flat = tf.reshape(h_pool, [-1, self.n_filter_total])
-        return h_pool_flat  # shape = [batch_size, self.n_filter_total]
+        inputs = tf.nn.embedding_lookup(self.embedding, X_inputs)    # inputs.shape=[batch_size, doc_len*sent_len, embedding_size]
+        sent_inputs = tf.reshape(inputs,[self.batch_size*self.doc_len, self.sent_len, self.embedding_size]) # shape=(?, 40, 256)
+        with tf.variable_scope('sentence_encoder'):  # 生成句向量
+            sent_outputs = self.bi_gru(sent_inputs, seg_num=self.batch_size*self.doc_len)
+            sent_attn_outputs = self.task_specific_attention(sent_outputs, self.hidden_size*2) # [batch_size*doc_len, hidden_size*2]
+            with tf.variable_scope('dropout'):
+                sent_attn_outputs = tf.nn.dropout(sent_attn_outputs, self.keep_prob)
+        with tf.variable_scope('doc_encoder'):      # 生成文档向量
+            doc_inputs = tf.reshape(sent_attn_outputs, [self.batch_size, self.doc_len, self.hidden_size*2])
+            doc_outputs = self.bi_gru(doc_inputs, self.batch_size)  # [batch_size, doc_len, hidden_size*2]
+            doc_attn_outputs = self.task_specific_attention(doc_outputs, self.hidden_size*2) # [batch_size, hidden_size*2]
+        return doc_attn_outputs    # [batch_size, hidden_size*2]
+
 
 
 # test the model
@@ -258,7 +244,7 @@ def test():
     config.gpu_options.allow_growth = True
     batch_size = 128
     with tf.Session(config=config) as sess:
-        model = BiGRU_CNN(W_embedding, settings)
+        model = HAN(W_embedding, settings)
         optimizer = tf.train.AdamOptimizer(0.001)
         train_op = optimizer.minimize(model.loss)
         update_op = tf.group(*model.update_emas)
@@ -267,7 +253,7 @@ def test():
         loss_list = list()
         for i in xrange(100):
             X1_batch = np.zeros((batch_size, 30), dtype=float)
-            X2_batch = np.zeros((batch_size, 150), dtype=float)
+            X2_batch = np.zeros((batch_size, 10 * 30), dtype=float)
             y_batch = np.zeros((batch_size, 1999), dtype=int)
             _batch_size = len(y_batch)
             feed_dict = {model.X1_inputs: X1_batch, model.X2_inputs: X2_batch, model.y_inputs: y_batch,

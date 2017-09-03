@@ -1,24 +1,17 @@
 # -*- coding:utf-8 -*-
 
 import tensorflow as tf
-from tensorflow.contrib import rnn
-import tensorflow.contrib.layers as layers
 
-"""wd-6-rcnn
-在论文 Recurrent Convolutional Neural Networks for Text Classification 中。
-使用 BiRNN 处理，将每个时刻的隐藏状态和原输入拼起来，在进行 max_pooling 操作。
-这里有些不同，首先也是使用 bigru 得到每个时刻的，将每个时刻的隐藏状态和原输入拼起来；
-然后使用输入到 TextCNN 网络中。
+"""wd_1_1_cnn_concat
+title 部分使用 TextCNN；content 部分使用 TextCNN； 两部分输出直接 concat。
 """
 
 
 class Settings(object):
     def __init__(self):
-        self.model_name = 'wd-5-bigru-cnn'
+        self.model_name = 'wd_1_1_cnn_concat'
         self.title_len = 30
         self.content_len = 150
-        self.hidden_size = 256
-        self.n_layer = 1
         self.filter_sizes = [2, 3, 4, 5, 7]
         self.n_filter = 256
         self.fc_hidden_size = 1024
@@ -27,13 +20,17 @@ class Settings(object):
         self.ckpt_path = '../../ckpt/' + self.model_name + '/'
 
 
-class RCNN(object):
+class TextCNN(object):
+    """
+    title: inputs->textcnn->output_title
+    content: inputs->textcnn->output_content
+    concat[output_title, output_content] -> fc+bn+relu -> sigmoid_entropy.
+    """
+
     def __init__(self, W_embedding, settings):
         self.model_name = settings.model_name
         self.title_len = settings.title_len
         self.content_len = settings.content_len
-        self.hidden_size = settings.hidden_size
-        self.n_layer = settings.n_layer
         self.filter_sizes = settings.filter_sizes
         self.n_filter = settings.n_filter
         self.n_filter_total = self.n_filter * len(self.filter_sizes)
@@ -53,19 +50,18 @@ class RCNN(object):
 
         with tf.variable_scope('embedding'):
             self.embedding = tf.get_variable(name='embedding', shape=W_embedding.shape,
-                                                   initializer=tf.constant_initializer(W_embedding), trainable=True)
+                                             initializer=tf.constant_initializer(W_embedding), trainable=True)
         self.embedding_size = W_embedding.shape[1]
 
-        with tf.variable_scope('rcnn_text'):
-            output_title = self.rcnn_inference(self._X1_inputs, self.title_len)
+        with tf.variable_scope('cnn_text'):
+            output_title = self.cnn_inference(self._X1_inputs, self.title_len)
 
-        with tf.variable_scope('rcnn_content'):
-            output_content = self.rcnn_inference(self._X2_inputs, self.content_len)
+        with tf.variable_scope('hcnn_content'):
+            output_content = self.cnn_inference(self._X2_inputs, self.content_len)
 
         with tf.variable_scope('fc-bn-layer'):
             output = tf.concat([output_title, output_content], axis=1)
-            W_fc = self.weight_variable([self.n_filter_total*2, self.fc_hidden_size],
-                                        name='Weight_fc')
+            W_fc = self.weight_variable([self.n_filter_total * 2, self.fc_hidden_size], name='Weight_fc')
             tf.summary.histogram('W_fc', W_fc)
             h_fc = tf.matmul(output, W_fc, name='h_fc')
             beta_fc = tf.Variable(tf.constant(0.1, tf.float32, shape=[self.fc_hidden_size], name="beta_fc"))
@@ -87,7 +83,7 @@ class RCNN(object):
                 tf.nn.sigmoid_cross_entropy_with_logits(logits=self._y_pred, labels=self._y_inputs))
             tf.summary.scalar('loss', self._loss)
 
-        self.saver = tf.train.Saver(max_to_keep=1)
+        self.saver = tf.train.Saver(max_to_keep=2)
 
     @property
     def tst(self):
@@ -161,86 +157,65 @@ class RCNN(object):
         Ybn = tf.nn.batch_normalization(Ylogits, m, v, offset, None, bnepsilon)
         return Ybn, update_moving_everages
 
-    def gru_cell(self):
-        with tf.name_scope('gru_cell'):
-            cell = rnn.GRUCell(self.hidden_size, reuse=tf.get_variable_scope().reuse)
-        return rnn.DropoutWrapper(cell, output_keep_prob=self.keep_prob)
-
-    def bi_gru(self, X_inputs):
-        """build the bi-GRU network. Return the encoder represented vector.
-        X_inputs: [batch_size, n_step]
-        n_step: 句子的词数量；或者文档的句子数。
-        outputs: [fw_state, embeddings, bw_state], shape=[batch_size, hidden_size+embedding_size+hidden_size]
+    def cnn_inference(self, X_inputs, n_step):
+        """TextCNN 模型。
+        Args:
+            X_inputs: tensor.shape=(batch_size, n_step)
+        Returns:
+            title_outputs: tensor.shape=(batch_size, self.n_filter_total)
         """
-        inputs = tf.nn.embedding_lookup(self.embedding, X_inputs)   # [batch_size, n_step, embedding_size]
-        cells_fw = [self.gru_cell() for _ in range(self.n_layer)]
-        cells_bw = [self.gru_cell() for _ in range(self.n_layer)]
-        initial_states_fw = [cell_fw.zero_state(self.batch_size, tf.float32) for cell_fw in cells_fw]
-        initial_states_bw = [cell_bw.zero_state(self.batch_size, tf.float32) for cell_bw in cells_bw]
-        outputs, _, _ = rnn.stack_bidirectional_dynamic_rnn(cells_fw, cells_bw, inputs,
-                        initial_states_fw = initial_states_fw, initial_states_bw = initial_states_bw, dtype=tf.float32)
-        hidden_outputs = tf.concat([outputs, inputs], axis=2)
-        return hidden_outputs  # shape =[seg_num, n_steps, hidden_size*2+embedding_size]
-
-    def textcnn(self, cnn_inputs, n_step):
-        """build the TextCNN network. Return the h_drop"""
-        # cnn_inputs.shape = [batchsize, n_step, hidden_size*2+embedding_size]
-        inputs = tf.expand_dims(cnn_inputs, -1)
+        inputs = tf.nn.embedding_lookup(self.embedding, X_inputs)
+        inputs = tf.expand_dims(inputs, -1)
         pooled_outputs = list()
         for i, filter_size in enumerate(self.filter_sizes):
             with tf.variable_scope("conv-maxpool-%s" % filter_size):
                 # Convolution Layer
-                filter_shape = [filter_size, self.hidden_size*2+self.embedding_size, 1, self.n_filter]
-                W_filter = tf.Variable(tf.truncated_normal(filter_shape, stddev=0.1), name="W_filter")
-                beta = tf.Variable(tf.constant(0.1, tf.float32, shape=[self.n_filter], name="beta"))
+                filter_shape = [filter_size, self.embedding_size, 1, self.n_filter]
+                W_filter = self.weight_variable(shape=filter_shape, name='W_filter')
+                beta = self.bias_variable(shape=[self.n_filter], name='beta_filter')
                 tf.summary.histogram('beta', beta)
                 conv = tf.nn.conv2d(inputs, W_filter, strides=[1, 1, 1, 1], padding="VALID", name="conv")
-                conv_bn, update_ema = self.batchnorm(conv, beta, convolutional=True)    # 在激活层前面加 BN
+                conv_bn, update_ema = self.batchnorm(conv, beta, convolutional=True)  # 在激活层前面加 BN
                 # Apply nonlinearity, batch norm scaling is not useful with relus
+                # batch norm offsets are used instead of biases,使用 BN 层的 offset，不要 biases
                 h = tf.nn.relu(conv_bn, name="relu")
                 # Maxpooling over the outputs
-                pooled = tf.nn.max_pool(h,ksize=[1, n_step - filter_size + 1, 1, 1],
-                                        strides=[1, 1, 1, 1],padding='VALID',name="pool")
+                pooled = tf.nn.max_pool(h, ksize=[1, n_step - filter_size + 1, 1, 1],
+                                        strides=[1, 1, 1, 1], padding='VALID', name="pool")
                 pooled_outputs.append(pooled)
                 self.update_emas.append(update_ema)
         h_pool = tf.concat(pooled_outputs, 3)
         h_pool_flat = tf.reshape(h_pool, [-1, self.n_filter_total])
-        return h_pool_flat    # shape = [batch_size, n_filter_total]
-
-    def rcnn_inference(self, X_inputs, n_step):
-        output_bigru = self.bi_gru(X_inputs)
-        output_cnn = self.textcnn(output_bigru, n_step)
-        return output_cnn # shape = [batch_size, n_filter_total]
+        return h_pool_flat  # shape = [batch_size, self.n_filter_total]
 
 
 # test the model
-def test():
-    import numpy as np
-    print('Begin testing...')
-    settings = Settings()
-    W_embedding = np.random.randn(50, 10)
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    batch_size = 128
-    with tf.Session(config=config) as sess:
-        model = RCNN(W_embedding, settings)
-        optimizer = tf.train.AdamOptimizer(0.001)
-        train_op = optimizer.minimize(model.loss)
-        update_op = tf.group(*model.update_emas)
-        sess.run(tf.global_variables_initializer())
-        fetch = [model.loss, model.y_pred, train_op, update_op]
-        loss_list = list()
-        for i in xrange(100):
-            X1_batch = np.zeros((batch_size, 30), dtype=float)
-            X2_batch = np.zeros((batch_size, 150), dtype=float)
-            y_batch = np.zeros((batch_size, 1999), dtype=int)
-            _batch_size = len(y_batch)
-            feed_dict = {model.X1_inputs: X1_batch, model.X2_inputs: X2_batch, model.y_inputs: y_batch,
-                         model.batch_size: _batch_size, model.tst: False, model.keep_prob: 0.5}
-            loss, y_pred, _, _ = sess.run(fetch, feed_dict=feed_dict)
-            loss_list.append(loss)
-            print(i, loss)
-
-
-if __name__ == '__main__':
-    test()
+# def test():
+#     import numpy as np
+#     print('Begin testing...')
+#     settings = Settings()
+#     W_embedding = np.random.randn(50, 10)
+#     config = tf.ConfigProto()
+#     config.gpu_options.allow_growth = True
+#     batch_size = 128
+#     with tf.Session(config=config) as sess:
+#         model = TextCNN(W_embedding, settings)
+#         optimizer = tf.train.AdamOptimizer(0.001)
+#         train_op = optimizer.minimize(model.loss)
+#         update_op = tf.group(*model.update_emas)
+#         sess.run(tf.global_variables_initializer())
+#         fetch = [model.loss, model.y_pred, train_op, update_op]
+#         loss_list = list()
+#         for i in xrange(100):
+#             X1_batch = np.zeros((batch_size, 30), dtype=float)
+#             X2_batch = np.zeros((batch_size, 150), dtype=float)
+#             y_batch = np.zeros((batch_size, 1999), dtype=int)
+#             _batch_size = len(y_batch)
+#             feed_dict = {model.X1_inputs: X1_batch, model.X2_inputs: X2_batch, model.y_inputs: y_batch,
+#                          model.batch_size: _batch_size, model.tst: False, model.keep_prob: 0.5}
+#             loss, y_pred, _, _ = sess.run(fetch, feed_dict=feed_dict)
+#             loss_list.append(loss)
+#             print(i, loss)
+#
+# if __name__ == '__main__':
+#     test()

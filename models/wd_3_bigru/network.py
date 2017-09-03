@@ -4,14 +4,14 @@ import tensorflow as tf
 from tensorflow.contrib import rnn
 import tensorflow.contrib.layers as layers
 
-"""wd-3-bigru
+"""wd_3_bigru
 title 部分使用 bigru+attention；content 部分使用 bigru+attention； 两部分输出直接 concat。
 """
 
 
 class Settings(object):
     def __init__(self):
-        self.model_name = 'wd-3-bigru'
+        self.model_name = 'wd_3_bigru'
         self.title_len = 30
         self.content_len = 150
         self.hidden_size = 256

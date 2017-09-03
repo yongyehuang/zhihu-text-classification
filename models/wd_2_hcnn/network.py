@@ -2,17 +2,18 @@
 
 import tensorflow as tf
 
-"""wd-1-1-cnn-concat
-title 部分使用 TextCNN；content 部分使用 TextCNN； 两部分输出直接 concat。
+"""wd_2_hcnn
+title 部分使用 TextCNN；content 部分使用分层的 TextCNN。
 """
 
 
 class Settings(object):
     def __init__(self):
-        self.model_name = 'wd-1-1-cnn-concat'
-        self.title_len = 30
-        self.content_len = 150
-        self.filter_sizes = [2, 3, 4, 5, 7]
+        self.model_name = 'wd_2_hcnn'
+        self.title_len = self.sent_len = 30
+        self.doc_len = 10
+        self.sent_filter_sizes = [2, 3, 4, 5]
+        self.doc_filter_sizes = [2, 3, 4]
         self.n_filter = 256
         self.fc_hidden_size = 1024
         self.n_class = 1999
@@ -20,20 +21,20 @@ class Settings(object):
         self.ckpt_path = '../../ckpt/' + self.model_name + '/'
 
 
-class TextCNN(object):
+class HCNN(object):
     """
     title: inputs->textcnn->output_title
-    content: inputs->textcnn->output_content
+    content: inputs->hcnn->output_content
     concat[output_title, output_content] -> fc+bn+relu -> sigmoid_entropy.
     """
 
     def __init__(self, W_embedding, settings):
         self.model_name = settings.model_name
-        self.title_len = settings.title_len
-        self.content_len = settings.content_len
-        self.filter_sizes = settings.filter_sizes
+        self.sent_len = settings.sent_len
+        self.doc_len = settings.doc_len
+        self.sent_filter_sizes = settings.sent_filter_sizes
+        self.doc_filter_sizes = settings.doc_filter_sizes
         self.n_filter = settings.n_filter
-        self.n_filter_total = self.n_filter * len(self.filter_sizes)
         self.n_class = settings.n_class
         self.fc_hidden_size = settings.fc_hidden_size
         self._global_step = tf.Variable(0, trainable=False, name='Global_Step')
@@ -44,8 +45,8 @@ class TextCNN(object):
         self._batch_size = tf.placeholder(tf.int32, [])
 
         with tf.name_scope('Inputs'):
-            self._X1_inputs = tf.placeholder(tf.int64, [None, self.title_len], name='X1_inputs')
-            self._X2_inputs = tf.placeholder(tf.int64, [None, self.content_len], name='X2_inputs')
+            self._X1_inputs = tf.placeholder(tf.int64, [None, self.sent_len], name='X1_inputs')
+            self._X2_inputs = tf.placeholder(tf.int64, [None, self.doc_len * self.sent_len], name='X2_inputs')
             self._y_inputs = tf.placeholder(tf.float32, [None, self.n_class], name='y_input')
 
         with tf.variable_scope('embedding'):
@@ -54,14 +55,15 @@ class TextCNN(object):
         self.embedding_size = W_embedding.shape[1]
 
         with tf.variable_scope('cnn_text'):
-            output_title = self.cnn_inference(self._X1_inputs, self.title_len)
+            output_title = self.cnn_inference(self._X1_inputs)
 
         with tf.variable_scope('hcnn_content'):
-            output_content = self.cnn_inference(self._X2_inputs, self.content_len)
+            output_content = self.hcnn_inference(self._X2_inputs)
 
         with tf.variable_scope('fc-bn-layer'):
             output = tf.concat([output_title, output_content], axis=1)
-            W_fc = self.weight_variable([self.n_filter_total * 2, self.fc_hidden_size], name='Weight_fc')
+            output_size = self.n_filter * (len(self.sent_filter_sizes) + len(self.doc_filter_sizes))
+            W_fc = self.weight_variable([output_size, self.fc_hidden_size], name='Weight_fc')
             tf.summary.histogram('W_fc', W_fc)
             h_fc = tf.matmul(output, W_fc, name='h_fc')
             beta_fc = tf.Variable(tf.constant(0.1, tf.float32, shape=[self.fc_hidden_size], name="beta_fc"))
@@ -157,22 +159,17 @@ class TextCNN(object):
         Ybn = tf.nn.batch_normalization(Ylogits, m, v, offset, None, bnepsilon)
         return Ybn, update_moving_everages
 
-    def cnn_inference(self, X_inputs, n_step):
-        """TextCNN 模型。
-        Args:
-            X_inputs: tensor.shape=(batch_size, n_step)
-        Returns:
-            title_outputs: tensor.shape=(batch_size, self.n_filter_total)
-        """
-        inputs = tf.nn.embedding_lookup(self.embedding, X_inputs)
-        inputs = tf.expand_dims(inputs, -1)
+    def textcnn(self, X_inputs, n_step, filter_sizes, embed_size):
+        """build the TextCNN network.
+        n_step: the sentence len."""
+        inputs = tf.expand_dims(X_inputs, -1)
         pooled_outputs = list()
-        for i, filter_size in enumerate(self.filter_sizes):
-            with tf.variable_scope("conv-maxpool-%s" % filter_size):
+        for i, filter_size in enumerate(filter_sizes):
+            with tf.name_scope("conv-maxpool-%s" % filter_size):
                 # Convolution Layer
-                filter_shape = [filter_size, self.embedding_size, 1, self.n_filter]
-                W_filter = self.weight_variable(shape=filter_shape, name='W_filter')
-                beta = self.bias_variable(shape=[self.n_filter], name='beta_filter')
+                filter_shape = [filter_size, embed_size, 1, self.n_filter]
+                W_filter = tf.Variable(tf.truncated_normal(filter_shape, stddev=0.1), name="W_filter")
+                beta = tf.Variable(tf.constant(0.1, tf.float32, shape=[self.n_filter], name="beta"))
                 tf.summary.histogram('beta', beta)
                 conv = tf.nn.conv2d(inputs, W_filter, strides=[1, 1, 1, 1], padding="VALID", name="conv")
                 conv_bn, update_ema = self.batchnorm(conv, beta, convolutional=True)  # 在激活层前面加 BN
@@ -185,9 +182,41 @@ class TextCNN(object):
                 pooled_outputs.append(pooled)
                 self.update_emas.append(update_ema)
         h_pool = tf.concat(pooled_outputs, 3)
-        h_pool_flat = tf.reshape(h_pool, [-1, self.n_filter_total])
-        return h_pool_flat  # shape = [batch_size, self.n_filter_total]
+        n_filter_total = self.n_filter * len(filter_sizes)
+        h_pool_flat = tf.reshape(h_pool, [-1, n_filter_total])
+        return h_pool_flat  # shape = [-1, n_filter_total]
 
+    def cnn_inference(self, X_inputs):
+        """TextCNN 模型。title部分。
+        Args:
+            X_inputs: tensor.shape=(batch_size, title_len)
+        Returns:
+            title_outputs: tensor.shape=(batch_size, n_filter*filter_num_sent)
+        """
+        inputs = tf.nn.embedding_lookup(self.embedding, X_inputs)
+        with tf.variable_scope('title_encoder'):  # 生成 title 的向量表示
+            title_outputs = self.textcnn(inputs, self.sent_len, self.sent_filter_sizes, embed_size=self.embedding_size)
+        return title_outputs  # shape = [batch_size, n_filter*filter_num_sent]
+
+    def hcnn_inference(self, X_inputs):
+        """分层 TextCNN 模型。content部分。
+        Args:
+            X_inputs: tensor.shape=(batch_size, doc_len*sent_len)
+        Returns:
+            doc_attn_outputs: tensor.shape=(batch_size, n_filter*filter_num_doc)
+        """
+        inputs = tf.nn.embedding_lookup(self.embedding,
+                                        X_inputs)  # inputs.shape=[batch_size, doc_len*sent_len, embedding_size]
+        sent_inputs = tf.reshape(inputs, [self.batch_size * self.doc_len, self.sent_len,
+                                          self.embedding_size])  # [batch_size*doc_len, sent_len, embedding_size]
+        with tf.variable_scope('sentence_encoder'):  # 生成句向量
+            sent_outputs = self.textcnn(sent_inputs, self.sent_len, self.sent_filter_sizes, self.embedding_size)
+        with tf.variable_scope('doc_encoder'):  # 生成文档向量
+            doc_inputs = tf.reshape(sent_outputs, [self.batch_size, self.doc_len, self.n_filter * len(
+                self.sent_filter_sizes)])  # [batch_size, doc_len, n_filter*len(filter_sizes_sent)]
+            doc_outputs = self.textcnn(doc_inputs, self.doc_len, self.doc_filter_sizes, self.n_filter * len(
+                self.sent_filter_sizes))  # [batch_size, doc_len, n_filter*filter_num_doc]
+        return doc_outputs  # [batch_size,  n_filter*len(doc_filter_sizes)]
 
 # test the model
 # def test():
@@ -199,7 +228,7 @@ class TextCNN(object):
 #     config.gpu_options.allow_growth = True
 #     batch_size = 128
 #     with tf.Session(config=config) as sess:
-#         model = TextCNN(W_embedding, settings)
+#         model = HCNN(W_embedding, settings)
 #         optimizer = tf.train.AdamOptimizer(0.001)
 #         train_op = optimizer.minimize(model.loss)
 #         update_op = tf.group(*model.update_emas)
@@ -208,7 +237,7 @@ class TextCNN(object):
 #         loss_list = list()
 #         for i in xrange(100):
 #             X1_batch = np.zeros((batch_size, 30), dtype=float)
-#             X2_batch = np.zeros((batch_size, 150), dtype=float)
+#             X2_batch = np.zeros((batch_size, 10 * 30), dtype=float)
 #             y_batch = np.zeros((batch_size, 1999), dtype=int)
 #             _batch_size = len(y_batch)
 #             feed_dict = {model.X1_inputs: X1_batch, model.X2_inputs: X2_batch, model.y_inputs: y_batch,
@@ -216,6 +245,5 @@ class TextCNN(object):
 #             loss, y_pred, _, _ = sess.run(fetch, feed_dict=feed_dict)
 #             loss_list.append(loss)
 #             print(i, loss)
-#
-# if __name__ == '__main__':
-#     test()
+
+# test()
