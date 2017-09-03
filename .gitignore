@@ -5,3 +5,4 @@ local_scores/*
 scores/*
 raw_data/*
 summary/*
+.ipynb_checkpoints/*
