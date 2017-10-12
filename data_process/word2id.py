@@ -10,7 +10,6 @@ from multiprocessing import Pool
 from tqdm import tqdm
 import time
 
-
 save_path = '../data/'
 with open(save_path + 'sr_word2id.pkl', 'rb') as inp:
     sr_id2word = pickle.load(inp)
@@ -22,7 +21,7 @@ for i in xrange(len(sr_word2id)):
 
 def get_id(word):
     """获取 word 所对应的 id.
-    如果该词不在词典中，用1进行替换。
+    如果该词不在词典中，用 <UNK>（对应的 ID 为 1 ）进行替换。
     """
     if word not in dict_word2id:
         return 1
@@ -33,7 +32,7 @@ def get_id(word):
 def get_id4words(words):
     """把 words 转为 对应的 id"""
     words = words.strip().split(',')  # 先分开词
-    ids = map(get_id, words)          # 获取id
+    ids = map(get_id, words)  # 获取id
     return ids
 
 
@@ -41,7 +40,7 @@ def test_word2id():
     """把测试集的所有词转成对应的id。"""
     time0 = time.time()
     print('Processing eval data.')
-    df_eval = pd.read_csv('../raw_data/question_eval_set.txt', sep='\t',  usecols=[0, 2, 4],
+    df_eval = pd.read_csv('../raw_data/question_eval_set.txt', sep='\t', usecols=[0, 2, 4],
                           names=['question_id', 'word_title', 'word_content'], dtype={'question_id': object})
     print('test question number %d' % len(df_eval))
     # 没有 title 的问题用 content 来替换
@@ -70,7 +69,7 @@ def test_word2id():
     np.save('../data/wd_eval_content.npy', eval_content)
     p.close()
     p.join()
-    print('Finished changing the eval words to ids. Costed time %g s' % (time.time()-time0))
+    print('Finished changing the eval words to ids. Costed time %g s' % (time.time() - time0))
 
 
 def train_word2id():

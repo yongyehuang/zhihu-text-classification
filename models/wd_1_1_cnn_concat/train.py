@@ -23,14 +23,14 @@ flags.DEFINE_float('lr', 1e-3, 'initial learning rate, default: 1e-3')
 flags.DEFINE_float('decay_rate', 0.65, 'decay rate, default: 0.65')
 flags.DEFINE_float('keep_prob', 0.5, 'keep_prob for training, default: 0.5')
 # 正式
-# flags.DEFINE_integer('decay_step', 15000, 'decay_step, default: 15000')
-# flags.DEFINE_integer('valid_step', 10000, 'valid_step, default: 10000')
-# flags.DEFINE_float('last_f1', 0.40, 'if valid_f1 > last_f1, save new model. default: 0.40')
+flags.DEFINE_integer('decay_step', 15000, 'decay_step, default: 15000')
+flags.DEFINE_integer('valid_step', 10000, 'valid_step, default: 10000')
+flags.DEFINE_float('last_f1', 0.40, 'if valid_f1 > last_f1, save new model. default: 0.40')
 
 # 测试
-flags.DEFINE_integer('decay_step', 1000, 'decay_step, default: 1000')
-flags.DEFINE_integer('valid_step', 500, 'valid_step, default: 500')
-flags.DEFINE_float('last_f1', 0.10, 'if valid_f1 > last_f1, save new model. default: 0.10')
+# flags.DEFINE_integer('decay_step', 1000, 'decay_step, default: 1000')
+# flags.DEFINE_integer('valid_step', 500, 'valid_step, default: 500')
+# flags.DEFINE_float('last_f1', 0.10, 'if valid_f1 > last_f1, save new model. default: 0.10')
 FLAGS = flags.FLAGS
 
 lr = FLAGS.lr
@@ -50,8 +50,8 @@ n_tr_batches = len(tr_batches)
 n_va_batches = len(va_batches)
 
 # 测试
-n_tr_batches = 1000
-n_va_batches = 50
+# n_tr_batches = 1000
+# n_va_batches = 50
 
 
 def get_batch(data_path, batch_id):

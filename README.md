@@ -22,7 +22,7 @@
 |　　|- data　　　　　　　　　　　# 预处理得到的数据<br/>
 |　　|- data_process　　　　　　　# 数据预处理代码<br/>
 |　　|- models　　　　　　　　　　# 模型代码<br/>
-|　　|　　|- wd-1-1-cnn-concat　　　　<br/>　　　　　　
+|　　|　　|- wd-1-1-cnn-concat　　　　<br/>
 |　　|　　|　　|- network.py　　　　　　# 定义网络结构<br/>
 |　　|　　|　　|- train.py　　　　　　  # 模型训练<br/>
 |　　|　　|　　|- predict.py　　　　　　# 验证集/测试集预测，生成概率矩阵<br/>
