@@ -1,11 +1,11 @@
 ## 数据处理
 
-1.把比赛提供的所有数据解压到 raw_data/ 目录下。
-2.按照顺序依次执行各个 .py，不带任何参数。
-  或者在当前目录下输入下面命令运行所有文件：
-  dos2unix run_all_data_process.sh   # 使用cygwin工具dos2unix将script改为unix格式
-  sh run_all_data_process.sh
-3.环境依赖(下面是我使用的版本)
+1.把比赛提供的所有数据解压到 raw_data/ 目录下。<br/>
+2.按照顺序依次执行各个 .py，不带任何参数。<br/>
+  或者在当前目录下输入下面命令运行所有文件：<br/>
+  dos2unix run_all_data_process.sh   # 使用cygwin工具dos2unix将script改为unix格式<br/>
+  sh run_all_data_process.sh<br/>
+3.环境依赖(下面是我使用的版本) <br/>
 - numpy		1.12.1
 - pandas 	0.19.2
 - word2vec	0.9.1

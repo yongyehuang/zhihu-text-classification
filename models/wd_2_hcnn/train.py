@@ -42,8 +42,8 @@ ckpt_path = settings.ckpt_path
 model_path = ckpt_path + 'model.ckpt'
 
 embedding_path = '../../data/word_embedding.npy'
-data_train_path = '../../data/wd-data/data_train/'
-data_valid_path = '../../data/wd-data/data_valid/'
+data_train_path = '../../data/wd-data/seg_train/'
+data_valid_path = '../../data/wd-data/seg_valid/'
 tr_batches = os.listdir(data_train_path)  # batch 文件名列表
 va_batches = os.listdir(data_valid_path)
 n_tr_batches = len(tr_batches)
@@ -103,7 +103,7 @@ def train_epoch(data_path, sess, model, train_fetches, valid_fetches, train_writ
             time0 = time.time()
             if f1 > last_f1:
                 last_f1 = f1
-                saving_path = model.saver.save(sess, model_path, global_step+1)
+                saving_path = model.saver.save(sess, model_path, global_step + 1)
                 print('saved new model to %s ' % saving_path)
         # training
         batch_id = batch_indexs[batch]
@@ -149,28 +149,28 @@ def main(_):
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
     with tf.Session(config=config) as sess:
-        model = network.TextCNN(W_embedding, settings)
+        model = network.HCNN(W_embedding, settings)
         with tf.variable_scope('training_ops') as vs:
             learning_rate = tf.train.exponential_decay(FLAGS.lr, model.global_step, FLAGS.decay_step,
-                                                   FLAGS.decay_rate, staircase=True)
+                                                       FLAGS.decay_rate, staircase=True)
             # two optimizer: op1, update embedding; op2, do not update embedding.
             with tf.variable_scope('Optimizer1'):
                 tvars1 = tf.trainable_variables()
                 grads1 = tf.gradients(model.loss, tvars1)
                 optimizer1 = tf.train.AdamOptimizer(learning_rate=learning_rate)
                 train_op1 = optimizer1.apply_gradients(zip(grads1, tvars1),
-                                                   global_step=model.global_step)
+                                                       global_step=model.global_step)
             with tf.variable_scope('Optimizer2'):
                 tvars2 = [tvar for tvar in tvars1 if 'embedding' not in tvar.name]
                 grads2 = tf.gradients(model.loss, tvars2)
                 optimizer2 = tf.train.AdamOptimizer(learning_rate=learning_rate)
                 train_op2 = optimizer2.apply_gradients(zip(grads2, tvars2),
-                                                   global_step=model.global_step)
+                                                       global_step=model.global_step)
             update_op = tf.group(*model.update_emas)
             merged = tf.summary.merge_all()  # summary
             train_writer = tf.summary.FileWriter(summary_path + 'train', sess.graph)
             test_writer = tf.summary.FileWriter(summary_path + 'test')
-            training_ops = [v for v in tf.global_variables() if v.name.startswith(vs.name+'/')]
+            training_ops = [v for v in tf.global_variables() if v.name.startswith(vs.name + '/')]
 
         # 如果已经保存过模型，导入上次的模型
         if os.path.exists(ckpt_path + "checkpoint"):
@@ -201,7 +201,7 @@ def main(_):
         print('END.Global_step=%d: valid cost=%g; p=%g, r=%g, f1=%g' % (
             sess.run(model.global_step), valid_cost, precision, recall, f1))
         if f1 > last_f1:  # save the better model
-            saving_path = model.saver.save(sess, model_path, sess.run(model.global_step)+1)
+            saving_path = model.saver.save(sess, model_path, sess.run(model.global_step) + 1)
             print('saved new model to %s ' % saving_path)
 
 
