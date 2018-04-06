@@ -9,8 +9,9 @@ import word2vec
 import pickle
 import os
 
-SPECIAL_SYMBOL = ['<PAD>', '<EOS>']  # add these special symbols to word(char) embeddings.
-
+# SPECIAL_SYMBOL = ['<PAD>', '<EOS>']  # add these special symbols to word(char) embeddings.
+# 之前这里写错了，实际上我只添加了一个特殊符号，还有一个特殊符号是用原来词向量中第一行来表示了
+SPECIAL_SYMBOL = ['<PAD>']  # add these special symbols to word(char) embeddings.
 
 def get_word_embedding():
     """提取词向量，并保存至 ../data/word_embedding.npy"""
@@ -20,7 +21,7 @@ def get_word_embedding():
     words = wv.vocab
     sr_id2word = pd.Series(words, index=range(1, 1 + len(words)))
     sr_word2id = pd.Series(range(1, 1 + len(words)), index=words)
-    # 添加特殊符号：<PAD>:0, <UNK>:1
+    # 添加特殊符号：
     embedding_size = 256
     n_special_sym = len(SPECIAL_SYMBOL)
     vec_special_sym = np.random.randn(n_special_sym, embedding_size)
