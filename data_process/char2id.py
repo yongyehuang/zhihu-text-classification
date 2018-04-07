@@ -52,7 +52,7 @@ def test_char2id():
             na_title_indexs.append(i)
     print('There are %d test questions without title.' % len(na_title_indexs))
     for na_index in na_title_indexs:
-        df_eval.loc[na_index, 'char_title'] = df_eval.loc[na_index, 'char_content']
+        df_eval.at[na_index, 'char_title'] = df_eval.at[na_index, 'char_content']
     # 没有 content 的问题用 title 来替换
     na_content_indexs = list()
     for i in tqdm(xrange(len(df_eval))):
@@ -88,7 +88,7 @@ def train_char2id():
             na_content_indexs.append(i)
     print('There are %d train questions without content.' % len(na_content_indexs))
     for na_index in tqdm(na_content_indexs):
-        df_train.loc[na_index, 'char_content'] = df_train.loc[na_index, 'char_title']
+        df_train.at[na_index, 'char_content'] = df_train.at[na_index, 'char_title']
     # 没有 title 的问题， 与词一样丢弃下面样本
     na_title_indexs = [328877, 422123, 633584, 768738, 818616, 876828, 1273673, 1527297,
               1636237, 1682969, 2052477, 2628516, 2657464, 2904162, 2993517]

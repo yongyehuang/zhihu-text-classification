@@ -60,7 +60,7 @@ def test_word2id():
             na_content_indexs.append(i)
     print('There are %d test questions without content.' % len(na_content_indexs))
     for na_index in tqdm(na_content_indexs):
-        df_eval.loc[na_index, 'word_content'] = df_eval.loc[na_index, 'word_title']
+        df_eval.at[na_index, 'word_content'] = df_eval.at[na_index, 'word_title']
     # 转为 id 形式
     p = Pool()
     eval_title = np.asarray(p.map(get_id4words, df_eval.word_title.values))
@@ -87,7 +87,7 @@ def train_word2id():
             na_content_indexs.append(i)
     print('There are %d train questions without content.' % len(na_content_indexs))
     for na_index in tqdm(na_content_indexs):
-        df_train.loc[na_index, 'word_content'] = df_train.loc[na_index, 'word_title']
+        df_train.at[na_index, 'word_content'] = df_train.at[na_index, 'word_title']
     # 没有 title 的问题， 丢弃
     na_title_indexs = list()
     for i in xrange(len(df_train)):

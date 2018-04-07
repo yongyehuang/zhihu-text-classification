@@ -186,13 +186,12 @@ def main(_):
 
         print('3.Begin training...')
         print('max_epoch=%d, max_max_epoch=%d' % (FLAGS.max_epoch, FLAGS.max_max_epoch))
+        train_op = train_op2
         for epoch in xrange(FLAGS.max_max_epoch):
             global_step = sess.run(model.global_step)
             print('Global step %d, lr=%g' % (global_step, sess.run(learning_rate)))
             if epoch == FLAGS.max_epoch:  # update the embedding
                 train_op = train_op1
-            else:
-                train_op = train_op2
             train_fetches = [merged, model.loss, train_op, update_op]
             valid_fetches = [merged, model.loss]
             train_epoch(data_train_path, sess, model, train_fetches, valid_fetches, train_writer, test_writer)
