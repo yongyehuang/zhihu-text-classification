@@ -61,7 +61,7 @@ def test_char2id():
             na_content_indexs.append(i)
     print('There are %d test questions without content.' % len(na_content_indexs))
     for na_index in tqdm(na_content_indexs):
-        df_eval.loc[na_index, 'char_content'] = df_eval.loc[na_index, 'char_title']
+        df_eval.at[na_index, 'char_content'] = df_eval.at[na_index, 'char_title']
     # 转为 id 形式
     p = Pool()
     eval_title = np.asarray(p.map(get_id4chars, df_eval.char_title.values))

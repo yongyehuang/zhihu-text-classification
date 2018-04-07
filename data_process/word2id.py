@@ -51,7 +51,7 @@ def test_word2id():
             na_title_indexs.append(i)
     print('There are %d test questions without title.' % len(na_title_indexs))
     for na_index in na_title_indexs:
-        df_eval.loc[na_index, 'word_title'] = df_eval.loc[na_index, 'word_content']
+        df_eval.at[na_index, 'word_title'] = df_eval.at[na_index, 'word_content']
     # 没有 content 的问题用 title 来替换
     na_content_indexs = list()
     for i in tqdm(xrange(len(df_eval))):

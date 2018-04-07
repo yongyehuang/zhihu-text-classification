@@ -46,12 +46,13 @@ def get_char_embedding():
     wv = word2vec.load('../raw_data/char_embedding.txt')
     char_embedding = wv.vectors
     chars = wv.vocab
-    sr_id2char = pd.Series(chars, index=range(1, 1 + len(chars)))
-    sr_char2id = pd.Series(range(1, 1 + len(chars)), index=chars)
+    n_special_sym = len(SPECIAL_SYMBOL)
+    sr_id2char = pd.Series(chars, index=range(n_special_sym, n_special_sym + len(chars)))
+    sr_char2id = pd.Series(range(n_special_sym, n_special_sym + len(chars)), index=chars)
 
     # 添加特殊符号：<PAD>:0, <UNK>:1
     embedding_size = 256
-    n_special_sym = len(SPECIAL_SYMBOL)
+
     vec_special_sym = np.random.randn(n_special_sym, embedding_size)
     for i in range(n_special_sym):
         sr_id2char[i] = SPECIAL_SYMBOL[i]
